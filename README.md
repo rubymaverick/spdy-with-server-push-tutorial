@@ -6,65 +6,69 @@ So to get prepared, I built my very first SPDY app using node.js and the `spdy` 
 
 First, here is the node.js app before spdy:
 
-    var fs = require('fs');
-    var http = require('http');
+```js
+var fs = require('fs');
+var http = require('http');
 
-    var backbone = fs.readFileSync('backbone.js');
-    var underscore = fs.readFileSync('underscore.js');
-    var applicationjs = fs.readFileSync('application.js');
-    var indexhtml = fs.readFileSync('index.html');
+var backbone = fs.readFileSync('backbone.js');
+var underscore = fs.readFileSync('underscore.js');
+var applicationjs = fs.readFileSync('application.js');
+var indexhtml = fs.readFileSync('index.html');
 
-    var server = http.createServer(function(request, response) {
-      var headers = {}
-      var body;
-      var status = 200;
+var server = http.createServer(function(request, response) {
+  var headers = {}
+  var body;
+  var status = 200;
 
-      switch(request.url){
-        case "/":
-          headers['Content-Type'] = 'text/html';
-          body = indexhtml
-          break;
-        case "/underscore.js":
-          headers['Content-Type'] = 'application/javascript';
-          body = underscore;
-          break;
-        case "/backbone.js":
-          headers['Content-Type'] = 'application/javascript';
-          body = backbone;
-          break;
-        case "/application.js":
-          headers['Content-Type'] = 'application/javascript';
-          body = applicationjs;
-          break;
-        default:
-          body = "";
-          status = 404;
-      }
+  switch(request.url){
+    case "/":
+      headers['Content-Type'] = 'text/html';
+      body = indexhtml
+      break;
+    case "/underscore.js":
+      headers['Content-Type'] = 'application/javascript';
+      body = underscore;
+      break;
+    case "/backbone.js":
+      headers['Content-Type'] = 'application/javascript';
+      body = backbone;
+      break;
+    case "/application.js":
+      headers['Content-Type'] = 'application/javascript';
+      body = applicationjs;
+      break;
+    default:
+      body = "";
+      status = 404;
+  }
 
-      headers['Content-Length'] = body.length;
+  headers['Content-Length'] = body.length;
 
-      response.writeHead(status, headers);
+  response.writeHead(status, headers);
 
-      response.end(body);
-    });
+  response.end(body);
+});
 
-    server.listen(8080, function(){
-      console.log("HTTP 1.1 Server started on 8080");
-    });
+server.listen(8080, function(){
+  console.log("HTTP 1.1 Server started on 8080");
+});
+```
 
 Here I created an `http` server using [createServer](http://nodejs.org/api/http.html#http_http_createserver_requestlistener) and gave it a request handler callback. Every time a new request hits this server it will invoke the callback, passing in a [request](http://nodejs.org/api/http.html#http_class_http_serverrequest) and [response](http://nodejs.org/api/http.html#http_class_http_serverresponse) object. I then write a little code to handle different URLs. I'm serving up four things: an HTML file at the root path, `underscore.js`, `backbone.js`, and my `application.js`. Here is the `index.html` file:
 
-    <html>
-      <head>
-        <title>Boring HTTP 1.1 App</title>
-        <script src='/underscore.js' type="text/javascript"></script>
-        <script src='/backbone.js' type="text/javascript"></script>
-        <script src='/application.js' type="text/javascript"></script>
-      </head>
-      <body>
-        <h1>Served with HTTP 1.1</h1>
-      </body>
-    </html>
+```html
+<html>
+  <head>
+    <title>Boring HTTP 1.1 App</title>
+    <script src='/underscore.js' type="text/javascript"></script>
+    <script src='/backbone.js' type="text/javascript"></script>
+    <script src='/application.js' type="text/javascript"></script>
+  </head>
+  <body>
+    <h1>Served with HTTP 1.1</h1>
+  </body>
+</html>
+```
 
 Now I can start my server with node and go to `localhost:8080` in Chrome.
 
@@ -85,70 +89,80 @@ Okay, that wasn't so bad. Now back to our node app. Let's walk through this.
 
 First, we require the `spdy` module instead of our `http` module:
 
-    var fs = require('fs');
-    var spdy = require('spdy');
+```js
+var fs = require('fs');
+var spdy = require('spdy');
+```
 
 The `spdy` replaces but still uses the `http` module for fallback on browsers that don't support SPDY. 
 
 Next up we just load our js files and our certificate files we just generated:
 
-    var backbone = fs.readFileSync('backbone.js');
-    var underscore = fs.readFileSync('underscore.js');
-    var applicationjs = fs.readFileSync('application.js');
-    
-    var options = {
-      key: fs.readFileSync('newkeys/server.key'),
-      cert: fs.readFileSync('newkeys/server.crt'),
-      ca: fs.readFileSync('newkeys/server.csr')
-    };
+```js
+var backbone = fs.readFileSync('backbone.js');
+var underscore = fs.readFileSync('underscore.js');
+var applicationjs = fs.readFileSync('application.js');
+
+var options = {
+  key: fs.readFileSync('newkeys/server.key'),
+  cert: fs.readFileSync('newkeys/server.crt'),
+  ca: fs.readFileSync('newkeys/server.csr')
+};
+```
 
 Now we create a `spdy` server, passing in our certificate options and a request handler:
 
-    var server = spdy.createServer(options, function(request, response) {
+```js
+var server = spdy.createServer(options, function(request, response) {
+```
 
 Next, we'll talk advantage of an awesome SPDY feature called [server push](http://www.chromium.org/spdy/spdy-protocol/spdy-protocol-draft3#TOC-3.3-Server-Push-Transactions) to "push" our asset files to the client along with our HTML response. The client will act like the pushed asset files were already in it's cache, so it doesn't have to make separate requests for our asset files and instead can immediately start interpreting them.
 
 With `spdy`, all we have to do is call `push` on the `response` for each file, like so:
 
-      var headers = {
-        'content-type': 'application/javascript'
-      }
-    
-      response.push('/backbone.js', headers, function(err, stream){
-        if (err) return;
-    
-        stream.end(backbone);
-      });
-      response.push('/underscore.js', headers, function(err, stream){
-        if (err) return;
-    
-        stream.end(underscore);
-      });
-      response.push('/application.js', headers, function(err, stream){
-        if (err) return;
-    
-        stream.end(applicationjs);
-      });
+```js
+var headers = {
+  'content-type': 'application/javascript'
+}
+
+response.push('/backbone.js', headers, function(err, stream){
+  if (err) return;
+
+  stream.end(backbone);
+});
+response.push('/underscore.js', headers, function(err, stream){
+  if (err) return;
+
+  stream.end(underscore);
+});
+response.push('/application.js', headers, function(err, stream){
+  if (err) return;
+
+  stream.end(applicationjs);
+});
+```
 
 Now we can finish up by responding with some HTML and using the `request.isSpdy` property to respond with a happy message of triumph if the client is SPDY capable:
 
-    response.writeHead(200, {'content-type': 'text/html'});
-      var message = "No SPDY for you!"
-      if (request.isSpdy){
-        message = "YAY! SPDY Works!"
-      }
-      response.end("" +
-        "<html>" + 
-          "<head>" +
-            "<title>First SPDY App!</title>" +
-            "<script src='/underscore.js'></script>" +
-            "<script src='/backbone.js'></script>" +
-            "<script src='/application.js'></script>" +
-          "<head>" +
-          "<body>" +
-            "<h1>" + message + "</h1>" +
-          "</body>" +
-        "<html>");
+```js
+response.writeHead(200, {'content-type': 'text/html'});
+  var message = "No SPDY for you!"
+  if (request.isSpdy){
+    message = "YAY! SPDY Works!"
+  }
+  response.end("" +
+    "<html>" + 
+      "<head>" +
+        "<title>First SPDY App!</title>" +
+        "<script src='/underscore.js'></script>" +
+        "<script src='/backbone.js'></script>" +
+        "<script src='/application.js'></script>" +
+      "<head>" +
+      "<body>" +
+        "<h1>" + message + "</h1>" +
+      "</body>" +
+    "<html>");
+```
 
 After calling `server.listen(8081)`, we can open up Chrome to `https://localhost:8081`:
 
